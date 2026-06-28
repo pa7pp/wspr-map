@@ -3,7 +3,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Live Trail (Stable)</title>
+  <title>WSPR Debug Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,19 +11,26 @@
   <style>
     body { margin: 0; }
     #map { height: 100vh; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 8px;
+      z-index: 1000;
+      font-family: monospace;
+    }
   </style>
 </head>
 
 <body>
+
+<div id="info">loading...</div>
 <div id="map"></div>
 
 <script>
 
-// 📡 call (via URL ?call=XXXX)
-const params = new URLSearchParams(window.location.search);
-const CALLSIGN = (params.get("call") || "DL0NOT").toUpperCase();
-
-// 🗺️ map init
+// 🗺️ MAP INIT
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -32,9 +39,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧠 trail memory (voorkomt duplicates)
-const seen = new Set();
+// 📡 INFO BOX
+const info = document.getElementById("info");
 
+// 🧠 LOAD DATA
 async function load() {
 
   const sql = `
@@ -44,87 +52,64 @@ ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
 
-  const url =
-    "https://db1.wspr.live/?query=" +
-    encodeURIComponent(sql);
+  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
 
   try {
 
     const res = await fetch(url);
-
     const text = await res.text();
 
-    // 🧪 safety check
-    if (!text.startsWith("{")) {
-      console.log("SERVER RESPONSE (not JSON):", text);
+    console.log("RAW RESPONSE:", text);
+
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      info.innerText = "JSON ERROR (check console)";
       return;
     }
 
-    const json = JSON.parse(text);
     const data = json.data || [];
 
-    console.log("spots:", data.length);
+    info.innerText = "spots: " + data.length;
 
-    const bounds = [];
+    console.log("spots loaded:", data.length);
+
+    layer.clearLayers();
+
+    let count = 0;
 
     data.forEach(s => {
 
       if (!s.tx_lat || !s.tx_lon) return;
 
-      const txCall = (s.tx_sign || "").toUpperCase();
-      const rxCall = (s.rx_sign || "").toUpperCase();
-
-      // 📡 filter in JS (belangrijk!)
-      if (
-        CALLSIGN &&
-        txCall !== CALLSIGN &&
-        rxCall !== CALLSIGN
-      ) return;
-
-      const key = `${txCall}-${rxCall}-${s.time}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
       const tx = [s.tx_lat, s.tx_lon];
-      bounds.push(tx);
 
-      // 🔴 TX marker
       L.circleMarker(tx, {
-        radius: 5,
+        radius: 4,
         color: "red"
       }).addTo(layer)
       .bindPopup(
-        `<b>TX:</b> ${txCall}<br>
-         <b>RX:</b> ${rxCall}<br>
-         ${s.band || ""} | ${s.snr || ""}<br>
-         ${s.time || ""}`
+        `${s.tx_sign} → ${s.rx_sign}<br>${s.band || ""}`
       );
 
-      // 🟢 RX lijn alleen als coords bestaan
-      if (s.rx_lat && s.rx_lon) {
-
-        const rx = [s.rx_lat, s.rx_lon];
-        bounds.push(rx);
-
-        L.polyline([tx, rx], {
-          color: "lime",
-          weight: 1,
-          opacity: 0.4
-        }).addTo(layer);
-      }
+      count++;
 
     });
 
-    if (bounds.length > 0) {
-      map.fitBounds(bounds);
+    info.innerText += " | drawn: " + count;
+
+    if (count === 0) {
+      info.innerText += " | NO COORD DATA";
     }
 
-  } catch (e) {
-    console.log("ERROR:", e);
+  } catch (err) {
+    console.log("ERROR:", err);
+    info.innerText = "FETCH ERROR";
   }
 }
 
-// 🚀 start + refresh
+// 🚀 START
 load();
 setInterval(load, 30000);
 
