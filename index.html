@@ -3,7 +3,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Live Map FIXED</title>
+  <title>WSPR TX RX Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -38,32 +38,28 @@ async function load() {
 
   clearMap();
 
-  // 🚨 CLEAN SQL (NO leading spaces, NO newline issues)
-  const sql =
-`SELECT tx_sign, rx_sign, tx_lat, tx_lon, snr, band, time
+  const sql = `
+SELECT tx_sign, rx_sign, tx_lat, tx_lon, rx_lat, rx_lon, snr, band, time
 FROM wspr.rx
 ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
 
-  // 🚨 ALWAYS encode
-  const url =
-    "https://db1.wspr.live/?query=" +
-    encodeURIComponent(sql);
+  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
 
   try {
 
     const res = await fetch(url);
-
     const text = await res.text();
 
-    // debug safety
-    if (!text.startsWith("{")) {
-      console.log("SERVER RESPONSE (not JSON):", text);
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.log("RAW:", text);
       return;
     }
 
-    const json = JSON.parse(text);
     const data = json.data || [];
 
     console.log("spots:", data.length);
@@ -72,30 +68,50 @@ FORMAT JSON`;
 
     data.forEach(s => {
 
-      // filter client-side
+      // filter op call (optioneel)
       if (CALLSIGN && s.tx_sign !== CALLSIGN) return;
 
-      if (!s.tx_lat || !s.tx_lon) return;
+      if (!s.tx_lat || !s.tx_lon || !s.rx_lat || !s.rx_lon) return;
 
-      bounds.push([s.tx_lat, s.tx_lon]);
+      const tx = [s.tx_lat, s.tx_lon];
+      const rx = [s.rx_lat, s.rx_lon];
 
-      L.circleMarker([s.tx_lat, s.tx_lon], {
-        radius: 4
+      bounds.push(tx);
+      bounds.push(rx);
+
+      // 🔴 TX (zender)
+      L.circleMarker(tx, {
+        radius: 5,
+        color: "red"
       }).addTo(layer)
       .bindPopup(
-        `${s.tx_sign} → ${s.rx_sign}<br>
-         SNR: ${s.snr}<br>
-         Band: ${s.band}<br>
-         ${s.time}`
+        `<b>TX</b>: ${s.tx_sign}<br>${s.time}`
       );
+
+      // 🔵 RX (spotter)
+      L.circleMarker(rx, {
+        radius: 5,
+        color: "blue"
+      }).addTo(layer)
+      .bindPopup(
+        `<b>RX</b>: ${s.rx_sign}<br>${s.band} | ${s.snr} dB`
+      );
+
+      // 🟢 propagation line
+      L.polyline([tx, rx], {
+        color: "green",
+        weight: 1,
+        opacity: 0.4
+      }).addTo(layer);
+
     });
 
     if (bounds.length > 0) {
       map.fitBounds(bounds);
     }
 
-  } catch (e) {
-    console.log("ERROR:", e);
+  } catch (err) {
+    console.log("ERROR:", err);
   }
 }
 
