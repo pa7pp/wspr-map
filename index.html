@@ -1,9 +1,10 @@
 
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Live Trail (Pro Fixed)</title>
+  <title>WSPR Activity Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,6 +12,7 @@
   <style>
     body { margin: 0; }
     #map { height: 100vh; }
+
     #info {
       position: absolute;
       top: 10px;
@@ -25,14 +27,10 @@
 
 <body>
 
-<div id="info">loading...</div>
+<div id="info">loading WSPR...</div>
 <div id="map"></div>
 
 <script>
-
-// 📡 CALL
-const params = new URLSearchParams(window.location.search);
-const CALLSIGN = (params.get("call") || "DL0NOT").toUpperCase();
 
 // 🗺️ MAP
 const map = L.map('map').setView([52, 5], 5);
@@ -43,21 +41,9 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧠 TRAIL MEMORY
-const seen = new Set();
-
 const info = document.getElementById("info");
 
-// 🧹 normalize functie (belangrijk!)
-function norm(c) {
-  return (c || "")
-    .toUpperCase()
-    .split("/")[0]
-    .split("-")[0]
-    .trim();
-}
-
-// 🌐 proxy wrapper (CORS fix)
+// 🧠 CORS PROXY + WSPR API
 function buildUrl(sql) {
 
   const wsprUrl =
@@ -71,7 +57,7 @@ function buildUrl(sql) {
 async function load() {
 
   const sql = `
-SELECT tx_sign, rx_sign, tx_lat, tx_lon, rx_lat, rx_lon, snr, band, time
+SELECT tx_sign, rx_sign, tx_lat, tx_lon, snr, band, time
 FROM wspr.rx
 ORDER BY time DESC
 LIMIT 300
@@ -87,66 +73,32 @@ FORMAT JSON`;
 
     console.log("spots:", data.length);
 
-    info.innerText = `spots: ${data.length}`;
+    info.innerText = `WSPR spots: ${data.length}`;
 
     layer.clearLayers();
 
     const bounds = [];
 
-    let drawn = 0;
-
     data.forEach(s => {
 
       if (!s.tx_lat || !s.tx_lon) return;
 
-      const txCall = norm(s.tx_sign);
-      const rxCall = norm(s.rx_sign);
-      const myCall = norm(CALLSIGN);
-
-      // 📡 ROBUUSTE WSPR MATCH
-      if (
-        CALLSIGN &&
-        !txCall.includes(myCall) &&
-        !rxCall.includes(myCall)
-      ) return;
-
-      const key = `${txCall}-${rxCall}-${s.time}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
       const tx = [s.tx_lat, s.tx_lon];
       bounds.push(tx);
 
-      // 🔴 TX marker
       L.circleMarker(tx, {
         radius: 5,
         color: "red"
       }).addTo(layer)
       .bindPopup(
-        `<b>TX:</b> ${txCall}<br>
-         <b>RX:</b> ${rxCall}<br>
-         ${s.band || ""} | ${s.snr || ""}<br>
-         ${s.time || ""}`
+        `<b>TX:</b> ${s.tx_sign}<br>
+         <b>RX:</b> ${s.rx_sign}<br>
+         <b>Band:</b> ${s.band}<br>
+         <b>SNR:</b> ${s.snr}<br>
+         <b>Time:</b> ${s.time}`
       );
 
-      // 🟢 RX lijn (alleen indien coords bestaan)
-      if (s.rx_lat && s.rx_lon) {
-
-        const rx = [s.rx_lat, s.rx_lon];
-        bounds.push(rx);
-
-        L.polyline([tx, rx], {
-          color: "lime",
-          weight: 1,
-          opacity: 0.4
-        }).addTo(layer);
-      }
-
-      drawn++;
-
     });
-
-    info.innerText += ` | drawn: ${drawn}`;
 
     if (bounds.length > 0) {
       map.fitBounds(bounds);
@@ -154,7 +106,7 @@ FORMAT JSON`;
 
   } catch (e) {
     console.log("ERROR:", e);
-    info.innerText = "ERROR (check console)";
+    info.innerText = "ERROR loading WSPR data";
   }
 }
 
@@ -163,5 +115,6 @@ load();
 setInterval(load, 30000);
 
 </script>
+
 </body>
 </html>
