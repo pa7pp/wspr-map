@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WSPR Map</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body { margin: 0; }
+    #map { height: 100vh; }
+  </style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<script>
+
+const CALLSIGN = "JOUWCALL";
+
+const map = L.map('map').setView([52.1, 5.1], 5);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18
+}).addTo(map);
+
+function gridToLatLon(grid) {
+  grid = grid.toUpperCase();
+
+  let lon = (grid.charCodeAt(0) - 65) * 20 - 180;
+  let lat = (grid.charCodeAt(1) - 65) * 10 - 90;
+
+  lon += parseInt(grid[2]) * 2;
+  lat += parseInt(grid[3]) * 1;
+
+  lon += (grid.charCodeAt(4) - 65) * (5/60);
+  lat += (grid.charCodeAt(5) - 65) * (2.5/60);
+
+  return { lat, lon };
+}
+
+async function loadSpots() {
+
+  const url = `https://www.wsprnet.org/olddb?mode=json&callsign=${CALLSIGN}&limit=200`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  data.forEach(s => {
+    if (!s.grid) return;
+
+    const p = gridToLatLon(s.grid);
+
+    L.circleMarker([p.lat, p.lon], { radius: 5 })
+      .addTo(map)
+      .bindPopup(
+        `${s.tx_sign} → ${s.rx_sign}<br>
+         SNR: ${s.snr}<br>
+         Band: ${s.band}`
+      );
+  });
+}
+
+loadSpots();
+setInterval(loadSpots, 60000);
+
+</script>
+</body>
+</html>
