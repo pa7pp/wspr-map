@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -23,55 +21,60 @@
 const params = new URLSearchParams(window.location.search);
 const CALLSIGN = params.get("call") || "DL0NOT";
 
+// 🗺️ map init
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-let layer = L.layerGroup().addTo(map);
+const layer = L.layerGroup().addTo(map);
 
-// 🔥 CLEAR + RELOAD (voorkomt stapeling)
+// 🧹 clear old markers
 function clearMap() {
   layer.clearLayers();
 }
 
-// 📡 LOAD DATA FROM WSPR.LIVE
-async function load() {
+// 📡 load WSPR data from wspr.live
+async function loadSpots() {
 
   clearMap();
 
-  const sql = `
-    SELECT
-      tx_sign,
-      rx_sign,
-      tx_lat,
-      tx_lon,
-      rx_lat,
-      rx_lon,
-      snr,
-      band,
-      time
-    FROM wspr.rx
-    WHERE tx_sign='${CALLSIGN}'
-    ORDER BY time DESC
-    LIMIT 300
-    FORMAT JSON
-  `;
+  const sql = `SELECT tx_sign, rx_sign, tx_lat, tx_lon, snr, band, time
+FROM wspr.rx
+ORDER BY time DESC
+LIMIT 300
+FORMAT JSON`;
 
-  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
+  const url =
+    "https://db1.wspr.live/?query=" +
+    encodeURIComponent(sql);
 
   try {
+
     const res = await fetch(url);
-    const json = await res.json();
+
+    // 🧪 safety: check if response is OK
+    const text = await res.text();
+
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.log("RAW RESPONSE:", text);
+      return;
+    }
 
     const data = json.data || [];
 
-    console.log("spots:", data.length);
+    console.log("spots loaded:", data.length);
 
     const bounds = [];
 
     data.forEach(s => {
+
+      // filter client-side (BELANGRIJK)
+      if (CALLSIGN && s.tx_sign !== CALLSIGN) return;
 
       if (!s.tx_lat || !s.tx_lon) return;
 
@@ -84,24 +87,26 @@ async function load() {
         radius: 4
       }).addTo(layer)
       .bindPopup(
-        `${s.tx_sign} → ${s.rx_sign}<br>
-         SNR: ${s.snr} dB<br>
-         Band: ${s.band}<br>
-         ${s.time}`
+        `<b>${s.tx_sign}</b> → ${s.rx_sign}<br>
+         SNR: ${s.snr || "?"} dB<br>
+         Band: ${s.band || "?"}<br>
+         ${s.time || ""}`
       );
+
     });
 
     if (bounds.length > 0) {
       map.fitBounds(bounds);
     }
 
-  } catch (e) {
-    console.log("ERROR:", e);
+  } catch (err) {
+    console.log("FETCH ERROR:", err);
   }
 }
 
-load();
-setInterval(load, 60000);
+// 🚀 start
+loadSpots();
+setInterval(loadSpots, 60000);
 
 </script>
 </body>
