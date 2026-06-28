@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -18,14 +19,17 @@
 
 <script>
 
-const CALLSIGN = "DL0NOT";
+const params = new URLSearchParams(window.location.search);
+const CALLSIGN = params.get("call") || "DL0NOT";
 
+// 🗺️ map init
 const map = L.map('map').setView([52.1, 5.1], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
+// 📡 grid converter (Maidenhead)
 function gridToLatLon(grid) {
   grid = grid.toUpperCase();
 
@@ -41,26 +45,45 @@ function gridToLatLon(grid) {
   return { lat, lon };
 }
 
+// 🔍 robuuste grid extractor
+function getGrid(s) {
+  return s.grid || s.grid4 || s.gridsquare || null;
+}
+
+// 📥 data laden
 async function loadSpots() {
 
-  const url = `https://www.wsprnet.org/olddb?mode=json&callsign=${CALLSIGN}&limit=200`;
+  const url = `https://www.wsprnet.org/olddb?mode=json&callsign=${CALLSIGN}&limit=300`;
 
   const res = await fetch(url);
   const data = await res.json();
 
+  const points = [];
+
   data.forEach(s => {
-    if (!s.grid) return;
 
-    const p = gridToLatLon(s.grid);
+    const grid = getGrid(s);
+    if (!grid) return;
 
-    L.circleMarker([p.lat, p.lon], { radius: 5 })
-      .addTo(map)
-      .bindPopup(
-        `${s.tx_sign} → ${s.rx_sign}<br>
-         SNR: ${s.snr}<br>
-         Band: ${s.band}`
-      );
+    const p = gridToLatLon(grid);
+
+    points.push([p.lat, p.lon]);
+
+    L.circleMarker([p.lat, p.lon], {
+      radius: 5
+    }).addTo(map)
+    .bindPopup(
+      `${s.tx_sign || "?"} → ${s.rx_sign || "?"}<br>
+       SNR: ${s.snr || "?"}<br>
+       Band: ${s.band || "?"}<br>
+       Time: ${s.time || ""}`
+    );
   });
+
+  // zoom naar data
+  if (points.length > 0) {
+    map.fitBounds(points);
+  }
 }
 
 loadSpots();
