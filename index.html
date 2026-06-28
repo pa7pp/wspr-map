@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -28,29 +29,29 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// 🧠 wspr.live uses full lat/lon already (BELANGRIJK!)
-function addPoint(s) {
+let layer = L.layerGroup().addTo(map);
 
-  if (!s.tx_lat || !s.tx_lon) return;
-
-  const lat = s.tx_lat;
-  const lon = s.tx_lon;
-
-  L.circleMarker([lat, lon], {
-    radius: 4
-  }).addTo(map)
-  .bindPopup(
-    `${s.tx_sign} → ${s.rx_sign}<br>
-     SNR: ${s.snr} dB<br>
-     Band: ${s.band}<br>
-     Time: ${s.time}`
-  );
+// 🔥 CLEAR + RELOAD (voorkomt stapeling)
+function clearMap() {
+  layer.clearLayers();
 }
 
+// 📡 LOAD DATA FROM WSPR.LIVE
 async function load() {
 
+  clearMap();
+
   const sql = `
-    SELECT *
+    SELECT
+      tx_sign,
+      rx_sign,
+      tx_lat,
+      tx_lon,
+      rx_lat,
+      rx_lon,
+      snr,
+      band,
+      time
     FROM wspr.rx
     WHERE tx_sign='${CALLSIGN}'
     ORDER BY time DESC
@@ -60,15 +61,43 @@ async function load() {
 
   const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
 
-  const res = await fetch(url);
-  const json = await res.json();
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
 
-  const data = json.data || [];
+    const data = json.data || [];
 
-  console.log("spots:", data.length);
+    console.log("spots:", data.length);
 
-  data.forEach(addPoint);
+    const bounds = [];
 
+    data.forEach(s => {
+
+      if (!s.tx_lat || !s.tx_lon) return;
+
+      const lat = s.tx_lat;
+      const lon = s.tx_lon;
+
+      bounds.push([lat, lon]);
+
+      L.circleMarker([lat, lon], {
+        radius: 4
+      }).addTo(layer)
+      .bindPopup(
+        `${s.tx_sign} → ${s.rx_sign}<br>
+         SNR: ${s.snr} dB<br>
+         Band: ${s.band}<br>
+         ${s.time}`
+      );
+    });
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds);
+    }
+
+  } catch (e) {
+    console.log("ERROR:", e);
+  }
 }
 
 load();
