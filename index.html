@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Trail Map Clean</title>
+  <title>WSPR Live Trail Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -18,9 +18,11 @@
 
 <script>
 
+// 📡 call uit URL
 const params = new URLSearchParams(window.location.search);
-const CALLSIGN = params.get("call") || "M0MBO";
+const CALLSIGN = (params.get("call") || "DL0NOT").toUpperCase();
 
+// 🗺️ map
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -29,15 +31,14 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧠 voorkom duplicates (trail memory)
+// 🧠 trail memory
 const seen = new Set();
 
-async function loadSpots() {
+async function load() {
 
   const sql = `
 SELECT tx_sign, rx_sign, tx_lat, tx_lon, rx_lat, rx_lon, snr, band, time
 FROM wspr.rx
-WHERE tx_sign='${CALLSIGN}'
 ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
@@ -60,7 +61,17 @@ FORMAT JSON`;
 
       if (!s.tx_lat || !s.tx_lon) return;
 
-      const key = `${s.tx_sign}-${s.rx_sign}-${s.time}`;
+      const txCall = (s.tx_sign || "").toUpperCase();
+      const rxCall = (s.rx_sign || "").toUpperCase();
+
+      // 📡 juiste WSPR filter (TX OF RX match)
+      if (
+        CALLSIGN &&
+        txCall !== CALLSIGN &&
+        rxCall !== CALLSIGN
+      ) return;
+
+      const key = `${txCall}-${rxCall}-${s.time}`;
       if (seen.has(key)) return;
       seen.add(key);
 
@@ -73,14 +84,13 @@ FORMAT JSON`;
         color: "red"
       }).addTo(layer)
       .bindPopup(
-        `<b>TX:</b> ${s.tx_sign}<br>
-         RX: ${s.rx_sign}<br>
-         Band: ${s.band}<br>
-         SNR: ${s.snr}<br>
-         ${s.time}`
+        `<b>TX:</b> ${txCall}<br>
+         <b>RX:</b> ${rxCall}<br>
+         ${s.band || ""} | ${s.snr || ""}<br>
+         ${s.time || ""}`
       );
 
-      // 🟢 RX lijn alleen als coords bestaan
+      // 🟢 RX lijn (alleen als coords bestaan)
       if (s.rx_lat && s.rx_lon) {
 
         const rx = [s.rx_lat, s.rx_lon];
@@ -105,8 +115,8 @@ FORMAT JSON`;
 }
 
 // 🚀 start + refresh
-loadSpots();
-setInterval(loadSpots, 30000);
+load();
+setInterval(load, 30000);
 
 </script>
 </body>
