@@ -1,10 +1,9 @@
 
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Map FIX</title>
+  <title>WSPR Live Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -23,79 +22,57 @@
 const params = new URLSearchParams(window.location.search);
 const CALLSIGN = params.get("call") || "DL0NOT";
 
-const map = L.map('map').setView([52.1, 5.1], 5);
+const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// 🌍 Maidenhead grid → lat/lon
-function gridToLatLon(grid) {
-  grid = grid.toUpperCase().trim();
+// 🧠 wspr.live uses full lat/lon already (BELANGRIJK!)
+function addPoint(s) {
 
-  let lon = (grid.charCodeAt(0) - 65) * 20 - 180;
-  let lat = (grid.charCodeAt(1) - 65) * 10 - 90;
+  if (!s.tx_lat || !s.tx_lon) return;
 
-  lon += parseInt(grid[2]) * 2;
-  lat += parseInt(grid[3]) * 1;
+  const lat = s.tx_lat;
+  const lon = s.tx_lon;
 
-  if (grid.length >= 6) {
-    lon += (grid.charCodeAt(4) - 65) * (5/60);
-    lat += (grid.charCodeAt(5) - 65) * (2.5/60);
-  }
-
-  return { lat, lon };
-}
-
-// 🔧 super-robuste extractor
-function extractGrid(s) {
-  return (
-    s.grid ||
-    s.gridsquare ||
-    s.grid4 ||
-    (s.rx_grid) ||
-    (s.tx_grid) ||
-    null
+  L.circleMarker([lat, lon], {
+    radius: 4
+  }).addTo(map)
+  .bindPopup(
+    `${s.tx_sign} → ${s.rx_sign}<br>
+     SNR: ${s.snr} dB<br>
+     Band: ${s.band}<br>
+     Time: ${s.time}`
   );
 }
 
-async function loadSpots() {
+async function load() {
 
-  const url = `https://www.wsprnet.org/olddb?mode=json&callsign=${CALLSIGN}&limit=300`;
+  const sql = `
+    SELECT *
+    FROM wspr.rx
+    WHERE tx_sign='${CALLSIGN}'
+    ORDER BY time DESC
+    LIMIT 300
+    FORMAT JSON
+  `;
+
+  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
 
   const res = await fetch(url);
-  const data = await res.json();
+  const json = await res.json();
 
-  console.log("RAW DATA:", data);
+  const data = json.data || [];
 
-  const points = [];
+  console.log("spots:", data.length);
 
-  data.forEach(s => {
+  data.forEach(addPoint);
 
-    const grid = extractGrid(s);
-    if (!grid) return;
-
-    const p = gridToLatLon(grid);
-
-    points.push([p.lat, p.lon]);
-
-    L.circleMarker([p.lat, p.lon], {
-      radius: 5
-    }).addTo(map)
-    .bindPopup(
-      `${s.tx_sign || "?"} → ${s.rx_sign || "?"}<br>
-       SNR: ${s.snr || "?"}<br>
-       Band: ${s.band || "?"}`
-    );
-  });
-
-  if (points.length > 0) {
-    map.fitBounds(points);
-  }
 }
 
-loadSpots();
-setInterval(loadSpots, 60000);
+load();
+setInterval(load, 60000);
 
 </script>
 </body>
