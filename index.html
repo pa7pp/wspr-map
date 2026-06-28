@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Trail Map</title>
+  <title>WSPR Trail Map Clean</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -30,10 +29,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧠 geheugen voor trail (BELANGRIJK)
-let seen = new Set();
+// 🧠 voorkom duplicates (trail memory)
+const seen = new Set();
 
-async function load() {
+async function loadSpots() {
 
   const sql = `
 SELECT tx_sign, rx_sign, tx_lat, tx_lon, rx_lat, rx_lon, snr, band, time
@@ -43,7 +42,9 @@ ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
 
-  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
+  const url =
+    "https://db1.wspr.live/?query=" +
+    encodeURIComponent(sql);
 
   try {
 
@@ -57,39 +58,40 @@ FORMAT JSON`;
 
     data.forEach(s => {
 
-      if (!s.tx_lat || !s.tx_lon || !s.rx_lat || !s.rx_lon) return;
+      if (!s.tx_lat || !s.tx_lon) return;
 
-      // 🧠 unieke key zodat we geen duplicates tekenen
       const key = `${s.tx_sign}-${s.rx_sign}-${s.time}`;
       if (seen.has(key)) return;
       seen.add(key);
 
       const tx = [s.tx_lat, s.tx_lon];
-      const rx = [s.rx_lat, s.rx_lon];
-
       bounds.push(tx);
-      bounds.push(rx);
 
-      // 🔴 TX
+      // 🔴 TX marker
       L.circleMarker(tx, {
         radius: 5,
         color: "red"
       }).addTo(layer)
-      .bindPopup(`TX: ${s.tx_sign}<br>${s.time}`);
+      .bindPopup(
+        `<b>TX:</b> ${s.tx_sign}<br>
+         RX: ${s.rx_sign}<br>
+         Band: ${s.band}<br>
+         SNR: ${s.snr}<br>
+         ${s.time}`
+      );
 
-      // 🔵 RX
-      L.circleMarker(rx, {
-        radius: 5,
-        color: "blue"
-      }).addTo(layer)
-      .bindPopup(`RX: ${s.rx_sign}<br>${s.band} ${s.snr}`);
+      // 🟢 RX lijn alleen als coords bestaan
+      if (s.rx_lat && s.rx_lon) {
 
-      // 🟢 lijn (trail effect)
-      L.polyline([tx, rx], {
-        color: "lime",
-        weight: 1,
-        opacity: 0.4
-      }).addTo(layer);
+        const rx = [s.rx_lat, s.rx_lon];
+        bounds.push(rx);
+
+        L.polyline([tx, rx], {
+          color: "lime",
+          weight: 1,
+          opacity: 0.4
+        }).addTo(layer);
+      }
 
     });
 
@@ -102,9 +104,9 @@ FORMAT JSON`;
   }
 }
 
-// 🚀 start + live update
-load();
-setInterval(load, 30000);
+// 🚀 start + refresh
+loadSpots();
+setInterval(loadSpots, 30000);
 
 </script>
 </body>
