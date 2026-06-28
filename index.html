@@ -1,9 +1,10 @@
 
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Map</title>
+  <title>WSPR Map FIX</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -22,16 +23,15 @@
 const params = new URLSearchParams(window.location.search);
 const CALLSIGN = params.get("call") || "DL0NOT";
 
-// 🗺️ map init
 const map = L.map('map').setView([52.1, 5.1], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// 📡 grid converter (Maidenhead)
+// 🌍 Maidenhead grid → lat/lon
 function gridToLatLon(grid) {
-  grid = grid.toUpperCase();
+  grid = grid.toUpperCase().trim();
 
   let lon = (grid.charCodeAt(0) - 65) * 20 - 180;
   let lat = (grid.charCodeAt(1) - 65) * 10 - 90;
@@ -39,18 +39,26 @@ function gridToLatLon(grid) {
   lon += parseInt(grid[2]) * 2;
   lat += parseInt(grid[3]) * 1;
 
-  lon += (grid.charCodeAt(4) - 65) * (5/60);
-  lat += (grid.charCodeAt(5) - 65) * (2.5/60);
+  if (grid.length >= 6) {
+    lon += (grid.charCodeAt(4) - 65) * (5/60);
+    lat += (grid.charCodeAt(5) - 65) * (2.5/60);
+  }
 
   return { lat, lon };
 }
 
-// 🔍 robuuste grid extractor
-function getGrid(s) {
-  return s.grid || s.grid4 || s.gridsquare || null;
+// 🔧 super-robuste extractor
+function extractGrid(s) {
+  return (
+    s.grid ||
+    s.gridsquare ||
+    s.grid4 ||
+    (s.rx_grid) ||
+    (s.tx_grid) ||
+    null
+  );
 }
 
-// 📥 data laden
 async function loadSpots() {
 
   const url = `https://www.wsprnet.org/olddb?mode=json&callsign=${CALLSIGN}&limit=300`;
@@ -58,11 +66,13 @@ async function loadSpots() {
   const res = await fetch(url);
   const data = await res.json();
 
+  console.log("RAW DATA:", data);
+
   const points = [];
 
   data.forEach(s => {
 
-    const grid = getGrid(s);
+    const grid = extractGrid(s);
     if (!grid) return;
 
     const p = gridToLatLon(grid);
@@ -75,12 +85,10 @@ async function loadSpots() {
     .bindPopup(
       `${s.tx_sign || "?"} → ${s.rx_sign || "?"}<br>
        SNR: ${s.snr || "?"}<br>
-       Band: ${s.band || "?"}<br>
-       Time: ${s.time || ""}`
+       Band: ${s.band || "?"}`
     );
   });
 
-  // zoom naar data
   if (points.length > 0) {
     map.fitBounds(points);
   }
