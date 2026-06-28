@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Live Trail Map</title>
+  <title>WSPR Live Trail (Stable)</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -18,11 +19,11 @@
 
 <script>
 
-// 📡 call uit URL
+// 📡 call (via URL ?call=XXXX)
 const params = new URLSearchParams(window.location.search);
 const CALLSIGN = (params.get("call") || "DL0NOT").toUpperCase();
 
-// 🗺️ map
+// 🗺️ map init
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -31,7 +32,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧠 trail memory
+// 🧠 trail memory (voorkomt duplicates)
 const seen = new Set();
 
 async function load() {
@@ -50,7 +51,16 @@ FORMAT JSON`;
   try {
 
     const res = await fetch(url);
-    const json = await res.json();
+
+    const text = await res.text();
+
+    // 🧪 safety check
+    if (!text.startsWith("{")) {
+      console.log("SERVER RESPONSE (not JSON):", text);
+      return;
+    }
+
+    const json = JSON.parse(text);
     const data = json.data || [];
 
     console.log("spots:", data.length);
@@ -64,7 +74,7 @@ FORMAT JSON`;
       const txCall = (s.tx_sign || "").toUpperCase();
       const rxCall = (s.rx_sign || "").toUpperCase();
 
-      // 📡 juiste WSPR filter (TX OF RX match)
+      // 📡 filter in JS (belangrijk!)
       if (
         CALLSIGN &&
         txCall !== CALLSIGN &&
@@ -90,7 +100,7 @@ FORMAT JSON`;
          ${s.time || ""}`
       );
 
-      // 🟢 RX lijn (alleen als coords bestaan)
+      // 🟢 RX lijn alleen als coords bestaan
       if (s.rx_lat && s.rx_lon) {
 
         const rx = [s.rx_lat, s.rx_lon];
