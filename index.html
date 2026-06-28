@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Debug Map</title>
+  <title>WSPR Live Trail (Working)</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,26 +10,17 @@
   <style>
     body { margin: 0; }
     #map { height: 100vh; }
-    #info {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 8px;
-      z-index: 1000;
-      font-family: monospace;
-    }
   </style>
 </head>
 
 <body>
-
-<div id="info">loading...</div>
 <div id="map"></div>
 
 <script>
 
-// 🗺️ MAP INIT
+const params = new URLSearchParams(window.location.search);
+const CALLSIGN = (params.get("call") || "DL0NOT").toUpperCase();
+
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -39,10 +29,17 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 📡 INFO BOX
-const info = document.getElementById("info");
+const seen = new Set();
 
-// 🧠 LOAD DATA
+// 🟢 CORS PROXY (belangrijk stuk)
+function buildUrl(sql) {
+  const wsprUrl =
+    "https://db1.wspr.live/?query=" +
+    encodeURIComponent(sql);
+
+  return "https://api.allorigins.win/raw?url=" + encodeURIComponent(wsprUrl);
+}
+
 async function load() {
 
   const sql = `
@@ -52,64 +49,72 @@ ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
 
-  const url = "https://db1.wspr.live/?query=" + encodeURIComponent(sql);
+  const url = buildUrl(sql);
 
   try {
 
     const res = await fetch(url);
-    const text = await res.text();
-
-    console.log("RAW RESPONSE:", text);
-
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      info.innerText = "JSON ERROR (check console)";
-      return;
-    }
-
+    const json = await res.json();
     const data = json.data || [];
 
-    info.innerText = "spots: " + data.length;
+    console.log("spots:", data.length);
 
-    console.log("spots loaded:", data.length);
-
-    layer.clearLayers();
-
-    let count = 0;
+    const bounds = [];
 
     data.forEach(s => {
 
       if (!s.tx_lat || !s.tx_lon) return;
 
+      const txCall = (s.tx_sign || "").toUpperCase();
+      const rxCall = (s.rx_sign || "").toUpperCase();
+
+      // filter op call (TX of RX)
+      if (
+        CALLSIGN &&
+        txCall !== CALLSIGN &&
+        rxCall !== CALLSIGN
+      ) return;
+
+      const key = `${txCall}-${rxCall}-${s.time}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
       const tx = [s.tx_lat, s.tx_lon];
+      bounds.push(tx);
 
       L.circleMarker(tx, {
-        radius: 4,
+        radius: 5,
         color: "red"
       }).addTo(layer)
       .bindPopup(
-        `${s.tx_sign} → ${s.rx_sign}<br>${s.band || ""}`
+        `<b>TX:</b> ${txCall}<br>
+         <b>RX:</b> ${rxCall}<br>
+         ${s.band || ""} | ${s.snr || ""}<br>
+         ${s.time || ""}`
       );
 
-      count++;
+      if (s.rx_lat && s.rx_lon) {
+        const rx = [s.rx_lat, s.rx_lon];
+        bounds.push(rx);
+
+        L.polyline([tx, rx], {
+          color: "lime",
+          weight: 1,
+          opacity: 0.4
+        }).addTo(layer);
+      }
 
     });
 
-    info.innerText += " | drawn: " + count;
-
-    if (count === 0) {
-      info.innerText += " | NO COORD DATA";
+    if (bounds.length > 0) {
+      map.fitBounds(bounds);
     }
 
-  } catch (err) {
-    console.log("ERROR:", err);
-    info.innerText = "FETCH ERROR";
+  } catch (e) {
+    console.log("ERROR:", e);
   }
 }
 
-// 🚀 START
 load();
 setInterval(load, 30000);
 
