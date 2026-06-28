@@ -3,7 +3,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR TX RX Map</title>
+  <title>WSPR Trail Map</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -30,17 +30,15 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-function clearMap() {
-  layer.clearLayers();
-}
+// 🧠 geheugen voor trail (BELANGRIJK)
+let seen = new Set();
 
 async function load() {
-
-  clearMap();
 
   const sql = `
 SELECT tx_sign, rx_sign, tx_lat, tx_lon, rx_lat, rx_lon, snr, band, time
 FROM wspr.rx
+WHERE tx_sign='${CALLSIGN}'
 ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
@@ -50,16 +48,7 @@ FORMAT JSON`;
   try {
 
     const res = await fetch(url);
-    const text = await res.text();
-
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      console.log("RAW:", text);
-      return;
-    }
-
+    const json = await res.json();
     const data = json.data || [];
 
     console.log("spots:", data.length);
@@ -68,10 +57,12 @@ FORMAT JSON`;
 
     data.forEach(s => {
 
-      // filter op call (optioneel)
-      if (CALLSIGN && s.tx_sign !== CALLSIGN) return;
-
       if (!s.tx_lat || !s.tx_lon || !s.rx_lat || !s.rx_lon) return;
+
+      // 🧠 unieke key zodat we geen duplicates tekenen
+      const key = `${s.tx_sign}-${s.rx_sign}-${s.time}`;
+      if (seen.has(key)) return;
+      seen.add(key);
 
       const tx = [s.tx_lat, s.tx_lon];
       const rx = [s.rx_lat, s.rx_lon];
@@ -79,27 +70,23 @@ FORMAT JSON`;
       bounds.push(tx);
       bounds.push(rx);
 
-      // 🔴 TX (zender)
+      // 🔴 TX
       L.circleMarker(tx, {
         radius: 5,
         color: "red"
       }).addTo(layer)
-      .bindPopup(
-        `<b>TX</b>: ${s.tx_sign}<br>${s.time}`
-      );
+      .bindPopup(`TX: ${s.tx_sign}<br>${s.time}`);
 
-      // 🔵 RX (spotter)
+      // 🔵 RX
       L.circleMarker(rx, {
         radius: 5,
         color: "blue"
       }).addTo(layer)
-      .bindPopup(
-        `<b>RX</b>: ${s.rx_sign}<br>${s.band} | ${s.snr} dB`
-      );
+      .bindPopup(`RX: ${s.rx_sign}<br>${s.band} ${s.snr}`);
 
-      // 🟢 propagation line
+      // 🟢 lijn (trail effect)
       L.polyline([tx, rx], {
-        color: "green",
+        color: "lime",
         weight: 1,
         opacity: 0.4
       }).addTo(layer);
@@ -110,13 +97,14 @@ FORMAT JSON`;
       map.fitBounds(bounds);
     }
 
-  } catch (err) {
-    console.log("ERROR:", err);
+  } catch (e) {
+    console.log("ERROR:", e);
   }
 }
 
+// 🚀 start + live update
 load();
-setInterval(load, 60000);
+setInterval(load, 30000);
 
 </script>
 </body>
