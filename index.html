@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WSPR Live Map</title>
+  <title>WSPR Live Map FIXED</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -21,7 +22,6 @@
 const params = new URLSearchParams(window.location.search);
 const CALLSIGN = params.get("call") || "DL0NOT";
 
-// 🗺️ map init
 const map = L.map('map').setView([52, 5], 5);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -30,22 +30,23 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const layer = L.layerGroup().addTo(map);
 
-// 🧹 clear old markers
 function clearMap() {
   layer.clearLayers();
 }
 
-// 📡 load WSPR data from wspr.live
-async function loadSpots() {
+async function load() {
 
   clearMap();
 
-  const sql = `SELECT tx_sign, rx_sign, tx_lat, tx_lon, snr, band, time
+  // 🚨 CLEAN SQL (NO leading spaces, NO newline issues)
+  const sql =
+`SELECT tx_sign, rx_sign, tx_lat, tx_lon, snr, band, time
 FROM wspr.rx
 ORDER BY time DESC
 LIMIT 300
 FORMAT JSON`;
 
+  // 🚨 ALWAYS encode
   const url =
     "https://db1.wspr.live/?query=" +
     encodeURIComponent(sql);
@@ -54,59 +55,52 @@ FORMAT JSON`;
 
     const res = await fetch(url);
 
-    // 🧪 safety: check if response is OK
     const text = await res.text();
 
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch (e) {
-      console.log("RAW RESPONSE:", text);
+    // debug safety
+    if (!text.startsWith("{")) {
+      console.log("SERVER RESPONSE (not JSON):", text);
       return;
     }
 
+    const json = JSON.parse(text);
     const data = json.data || [];
 
-    console.log("spots loaded:", data.length);
+    console.log("spots:", data.length);
 
     const bounds = [];
 
     data.forEach(s => {
 
-      // filter client-side (BELANGRIJK)
+      // filter client-side
       if (CALLSIGN && s.tx_sign !== CALLSIGN) return;
 
       if (!s.tx_lat || !s.tx_lon) return;
 
-      const lat = s.tx_lat;
-      const lon = s.tx_lon;
+      bounds.push([s.tx_lat, s.tx_lon]);
 
-      bounds.push([lat, lon]);
-
-      L.circleMarker([lat, lon], {
+      L.circleMarker([s.tx_lat, s.tx_lon], {
         radius: 4
       }).addTo(layer)
       .bindPopup(
-        `<b>${s.tx_sign}</b> → ${s.rx_sign}<br>
-         SNR: ${s.snr || "?"} dB<br>
-         Band: ${s.band || "?"}<br>
-         ${s.time || ""}`
+        `${s.tx_sign} → ${s.rx_sign}<br>
+         SNR: ${s.snr}<br>
+         Band: ${s.band}<br>
+         ${s.time}`
       );
-
     });
 
     if (bounds.length > 0) {
       map.fitBounds(bounds);
     }
 
-  } catch (err) {
-    console.log("FETCH ERROR:", err);
+  } catch (e) {
+    console.log("ERROR:", e);
   }
 }
 
-// 🚀 start
-loadSpots();
-setInterval(loadSpots, 60000);
+load();
+setInterval(load, 60000);
 
 </script>
 </body>
